@@ -8,8 +8,18 @@ by passing the previous invalid SQL plus the semantic/syntax errors.
 Reads credentials the normal way the Anthropic SDK does (ANTHROPIC_API_KEY
 env var, or another resolvable credential source) — no key handling of our
 own.
+
+STUB MODE: if ANTHROPIC_API_KEY isn't set, generate_sql() automatically
+falls back to STUB_RESPONSES below instead of calling the API or raising.
+This keeps `python main.py` demoable with no key configured at all — useful
+for a live review where network/credentials might not cooperate. A note is
+printed the first time stub mode kicks in so it's never silently pretending
+to be the real LLM. Stub mode only knows the built-in demo questions (see
+tests/examples.py); anything else raises LLMError explaining that a real
+key is needed.
 """
 
+import os
 import re
 
 from anthropic import (
@@ -21,6 +31,31 @@ from anthropic import (
 )
 
 MODEL = "claude-sonnet-5"
+
+# Pre-written stand-ins for the LLM, used only when no API key is configured.
+# Keyed by the exact question text from tests/examples.py. Each entry has an
+# "initial" response (attempt #1) and, for the one deliberately-invalid
+# example, a "repair" response returned once errors are fed back — so stub
+# mode can still exercise the full validate-then-repair path with no live
+# model in the loop.
+STUB_RESPONSES = {
+    "List the titles and authors of every Dystopian book.": {
+        "initial": "SELECT title, author FROM Books WHERE genre = 'Dystopian'",
+    },
+    "How many books are there in each genre?": {
+        "initial": "SELECT genre, COUNT(*) FROM Books GROUP BY genre",
+    },
+    "For each genre, show the author and how many books there are.": {
+        # Deliberately invalid: 'author' is selected alongside COUNT(*) but is
+        # neither aggregated nor listed in GROUP BY — the same mistake
+        # tests/examples.py seeds directly, reproduced here so stub mode
+        # triggers the repair path on its own too.
+        "initial": "SELECT genre, author, COUNT(*) FROM Books GROUP BY genre",
+        "repair": "SELECT genre, COUNT(*) FROM Books GROUP BY genre",
+    },
+}
+
+_stub_notice_printed = False
 
 SYSTEM_PROMPT = """You are a SQL generator for a fixed SQLite schema. Given a natural \
 language question, output exactly one SELECT statement that answers it, and nothing else.
@@ -56,7 +91,46 @@ def generate_sql(question: str, schema_description: str, previous_sql: str = Non
     On a repair attempt, pass the previous (invalid) SQL and the list of
     validation error strings from semantic_analyzer/parser; the model is
     asked to fix that specific query rather than start over blind.
+
+    Falls back to stub mode (see module docstring) when ANTHROPIC_API_KEY
+    is not set, instead of failing.
     """
+    if not os.environ.get("ANTHROPIC_API_KEY"):
+        return _generate_sql_stub(question, previous_sql)
+    return _generate_sql_live(question, schema_description, previous_sql, errors)
+
+
+def _generate_sql_stub(question: str, previous_sql: str = None) -> str:
+    global _stub_notice_printed
+    if not _stub_notice_printed:
+        print(
+            "[llm_client] ANTHROPIC_API_KEY not set - running in STUB MODE: "
+            "returning pre-written example SQL instead of calling the real LLM."
+        )
+        _stub_notice_printed = True
+
+    canned = STUB_RESPONSES.get(question)
+    if canned is None:
+        raise LLMError(
+            f"Stub mode has no pre-written response for the question {question!r}. "
+            "Set ANTHROPIC_API_KEY to use the real LLM for questions outside the "
+            "built-in demo examples."
+        )
+
+    if previous_sql is None:
+        return canned["initial"]
+
+    repaired = canned.get("repair")
+    if repaired is None:
+        raise LLMError(
+            f"Stub mode has no pre-written repair for the question {question!r}. "
+            "Set ANTHROPIC_API_KEY to use the real LLM to repair arbitrary errors."
+        )
+    return repaired
+
+
+def _generate_sql_live(question: str, schema_description: str, previous_sql: str = None,
+                        errors=None) -> str:
     system = SYSTEM_PROMPT.format(schema=schema_description)
 
     if previous_sql is None:

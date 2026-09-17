@@ -65,9 +65,20 @@ export ANTHROPIC_API_KEY=sk-ant-...        # macOS/Linux
 setx ANTHROPIC_API_KEY "sk-ant-..."        # Windows (new shells)
 ```
 
+**No API key? `main.py` still runs.** If `ANTHROPIC_API_KEY` isn't set,
+`llm_client.py` automatically falls back to a stub that returns pre-written
+SQL for the three built-in demo questions (`STUB_RESPONSES` in
+`llm_client.py`) instead of calling the API — including a deliberately
+invalid first response for example 3, so the repair path still runs with no
+live model involved. A `[llm_client] ... running in STUB MODE` note prints
+once so it's never mistaken for real LLM output. Stub mode only covers the
+built-in demo questions; anything else raises a clear error asking for a
+real key.
+
 ## Running
 
-**Full pipeline demo** (requires `ANTHROPIC_API_KEY`):
+**Full pipeline demo** (uses the real LLM if `ANTHROPIC_API_KEY` is set,
+otherwise runs in stub mode automatically — see above):
 
 ```bash
 python main.py
