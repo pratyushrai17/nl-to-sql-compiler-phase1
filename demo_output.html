@@ -1,0 +1,334 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>NL to SQL Pipeline Demo</title>
+<style>
+:root {
+  color-scheme: light;
+  --bg: #f4f6f8;
+  --card-bg: #ffffff;
+  --border: #d7dce1;
+  --text: #1f2937;
+  --muted: #6b7280;
+  --accent: #2563eb;
+  --ok-bg: #e8f5e9;
+  --ok-fg: #2e7d32;
+  --fail-bg: #fdecea;
+  --fail-fg: #c62828;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  padding: 24px 16px 64px;
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+  line-height: 1.5;
+}
+.page-title { text-align: center; margin: 0 0 4px; font-size: 28px; }
+.page-subtitle { text-align: center; color: var(--muted); margin: 0 0 24px; }
+.toc {
+  max-width: 720px;
+  margin: 0 auto 40px;
+  display: flex;
+  justify-content: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.toc a {
+  color: var(--accent);
+  text-decoration: none;
+  font-weight: 600;
+  padding: 6px 14px;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  background: var(--card-bg);
+}
+.toc a:hover { background: #eef2ff; }
+
+.example {
+  max-width: 1100px;
+  margin: 0 auto 56px;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 24px 28px 32px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+}
+.example h2 { margin-top: 0; display: flex; align-items: center; gap: 12px; }
+.badge {
+  font-size: 12px;
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: 12px;
+  letter-spacing: 0.03em;
+}
+.badge.ok { background: var(--ok-bg); color: var(--ok-fg); }
+.badge.fail { background: var(--fail-bg); color: var(--fail-fg); }
+
+.question {
+  font-size: 18px;
+  font-style: italic;
+  color: #374151;
+  margin: 4px 0 24px;
+  padding: 12px 16px;
+  background: #f9fafb;
+  border-left: 4px solid var(--accent);
+  border-radius: 4px;
+}
+
+.attempts-row {
+  display: flex;
+  gap: 20px;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+}
+.attempts-row.multi .attempt-card { flex: 1 1 420px; }
+.attempts-row:not(.multi) .attempt-card { flex: 1 1 100%; }
+
+.attempt-card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px 18px;
+  background: #fcfcfd;
+}
+.attempt-header { font-weight: 700; margin-bottom: 10px; }
+.attempt-header .source { font-weight: 400; color: var(--muted); font-size: 13px; }
+
+.block-label {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  margin: 14px 0 6px;
+  font-weight: 700;
+}
+.sql-box {
+  font-family: "Consolas", "Menlo", monospace;
+  font-size: 14px;
+  background: #0f172a;
+  color: #e2e8f0;
+  padding: 10px 14px;
+  border-radius: 6px;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.sql-box.final { background: #14532d; color: #ecfdf5; }
+
+.token-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.token-box {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #fff;
+  padding: 4px 8px;
+  text-align: center;
+  min-width: 44px;
+}
+.token-type {
+  font-size: 10px;
+  color: var(--accent);
+  font-weight: 700;
+  text-transform: uppercase;
+}
+.token-value {
+  font-family: monospace;
+  font-size: 13px;
+  word-break: break-word;
+}
+
+.validation {
+  display: inline-flex;
+  flex-direction: column;
+  padding: 8px 14px;
+  border-radius: 6px;
+  font-weight: 600;
+}
+.validation.ok { background: var(--ok-bg); color: var(--ok-fg); }
+.validation.fail { background: var(--fail-bg); color: var(--fail-fg); }
+.validation .check, .validation .cross { margin-right: 6px; }
+.error-list { margin: 8px 0 0; padding-left: 20px; font-weight: 400; font-size: 13px; }
+
+.final-sql-box { margin-top: 8px; }
+
+table.results {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 14px;
+  margin-top: 6px;
+}
+table.results th, table.results td {
+  border: 1px solid var(--border);
+  padding: 6px 10px;
+  text-align: left;
+}
+table.results th { background: #f3f4f6; }
+table.results tr:nth-child(even) td { background: #fafafa; }
+
+.muted { color: var(--muted); font-style: italic; }
+
+/* -- pure-CSS connected-box tree ------------------------------------------- */
+.tree-wrap { overflow-x: auto; padding: 8px 0 4px; }
+.tree, .tree ul, .tree li {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  position: relative;
+}
+.tree {
+  display: inline-flex;
+  justify-content: center;
+  padding-top: 10px;
+  min-width: 100%;
+}
+.tree ul {
+  display: flex;
+  padding-top: 20px;
+  position: relative;
+}
+.tree li {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 20px 10px 0 10px;
+  position: relative;
+}
+.tree li::before, .tree li::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 50%;
+  width: 50%;
+  height: 20px;
+  border-top: 2px solid #9ca3af;
+}
+.tree li::after { right: auto; left: 50%; border-left: 2px solid #9ca3af; }
+.tree li:only-child::after, .tree li:only-child::before { display: none; }
+.tree li:only-child { padding-top: 0; }
+.tree li:first-child::before { border: 0 none; }
+.tree li:last-child::after { border: 0 none; }
+.tree li:last-child::before { border-right: 2px solid #9ca3af; border-radius: 0 6px 0 0; }
+.tree li:first-child::after { border-radius: 6px 0 0 0; }
+.tree ul ul::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 50%;
+  border-left: 2px solid #9ca3af;
+  width: 0;
+  height: 20px;
+}
+.tree li .tree-node {
+  border: 1px solid #9ca3af;
+  border-radius: 5px;
+  background: #fff;
+  padding: 5px 10px;
+  font-family: monospace;
+  font-size: 12px;
+  white-space: nowrap;
+  display: inline-block;
+}
+</style>
+</head>
+<body>
+  <h1 class="page-title">NL &rarr; SQL Compiler Pipeline</h1>
+  <p class="page-subtitle">Phase 1 prototype demo &mdash; generated by visualize.py from a live pipeline run</p>
+  <nav class="toc">
+    <a href="#example-1">Example 1</a>
+    <a href="#example-2">Example 2</a>
+    <a href="#example-3">Example 3</a>
+  </nav>
+  
+    <section class="example" id="example-1">
+      <h2>Example 1 <span class='badge ok'>SUCCESS</span></h2>
+      <div class="question">&ldquo;List the titles and authors of every Dystopian book.&rdquo;</div>
+      <div class="attempts-row">
+    <div class="attempt-card">
+      <div class="attempt-header">Attempt 1 <span class="source">(llm)</span></div>
+      <div class="sql-box">SELECT title, author FROM Books WHERE genre = &#x27;Dystopian&#x27;</div>
+      <div class="block-label">Tokens</div>
+      <div class='token-row'><div class='token-box'><div class='token-type'>SELECT</div><div class='token-value'>SELECT</div></div><div class='token-box'><div class='token-type'>IDENT</div><div class='token-value'>title</div></div><div class='token-box'><div class='token-type'>COMMA</div><div class='token-value'>,</div></div><div class='token-box'><div class='token-type'>IDENT</div><div class='token-value'>author</div></div><div class='token-box'><div class='token-type'>FROM</div><div class='token-value'>FROM</div></div><div class='token-box'><div class='token-type'>IDENT</div><div class='token-value'>Books</div></div><div class='token-box'><div class='token-type'>WHERE</div><div class='token-value'>WHERE</div></div><div class='token-box'><div class='token-type'>IDENT</div><div class='token-value'>genre</div></div><div class='token-box'><div class='token-type'>EQ</div><div class='token-value'>=</div></div><div class='token-box'><div class='token-type'>STRING</div><div class='token-value'>Dystopian</div></div></div>
+      <div class="block-label">AST</div>
+      <div class="tree-wrap"><ul class='tree'><li><span class='tree-node'>SelectStatement</span><ul><li><span class='tree-node'>SELECT</span><ul><li><span class='tree-node'>title</span></li><li><span class='tree-node'>author</span></li></ul></li><li><span class='tree-node'>FROM</span><ul><li><span class='tree-node'>Books</span></li></ul></li><li><span class='tree-node'>WHERE</span><ul><li><span class='tree-node'>genre = &#x27;Dystopian&#x27;</span></li></ul></li></ul></li></ul></div>
+      <div class="block-label">Validation</div>
+      <div class='validation ok'><span class='check'>&#10003;</span> Valid</div>
+    </div>
+    </div>
+      
+        <div class="final-sql-box">
+          <div class="block-label">Final validated SQL</div>
+          <div class="sql-box final">SELECT title, author FROM Books WHERE genre = &#x27;Dystopian&#x27;</div>
+        </div>
+        <div class="block-label">Query results</div>
+        <table class='results'><thead><tr><th>title</th><th>author</th></tr></thead><tbody><tr><td>1984</td><td>George Orwell</td></tr><tr><td>Brave New World</td><td>Aldous Huxley</td></tr></tbody></table>
+        
+    </section>
+    
+    <section class="example" id="example-2">
+      <h2>Example 2 <span class='badge ok'>SUCCESS</span></h2>
+      <div class="question">&ldquo;How many books are there in each genre?&rdquo;</div>
+      <div class="attempts-row">
+    <div class="attempt-card">
+      <div class="attempt-header">Attempt 1 <span class="source">(llm)</span></div>
+      <div class="sql-box">SELECT genre, COUNT(*) FROM Books GROUP BY genre</div>
+      <div class="block-label">Tokens</div>
+      <div class='token-row'><div class='token-box'><div class='token-type'>SELECT</div><div class='token-value'>SELECT</div></div><div class='token-box'><div class='token-type'>IDENT</div><div class='token-value'>genre</div></div><div class='token-box'><div class='token-type'>COMMA</div><div class='token-value'>,</div></div><div class='token-box'><div class='token-type'>IDENT</div><div class='token-value'>COUNT</div></div><div class='token-box'><div class='token-type'>LPAREN</div><div class='token-value'>(</div></div><div class='token-box'><div class='token-type'>STAR</div><div class='token-value'>*</div></div><div class='token-box'><div class='token-type'>RPAREN</div><div class='token-value'>)</div></div><div class='token-box'><div class='token-type'>FROM</div><div class='token-value'>FROM</div></div><div class='token-box'><div class='token-type'>IDENT</div><div class='token-value'>Books</div></div><div class='token-box'><div class='token-type'>GROUP</div><div class='token-value'>GROUP</div></div><div class='token-box'><div class='token-type'>BY</div><div class='token-value'>BY</div></div><div class='token-box'><div class='token-type'>IDENT</div><div class='token-value'>genre</div></div></div>
+      <div class="block-label">AST</div>
+      <div class="tree-wrap"><ul class='tree'><li><span class='tree-node'>SelectStatement</span><ul><li><span class='tree-node'>SELECT</span><ul><li><span class='tree-node'>genre</span></li><li><span class='tree-node'>COUNT(...)</span><ul><li><span class='tree-node'>*</span></li></ul></li></ul></li><li><span class='tree-node'>FROM</span><ul><li><span class='tree-node'>Books</span></li></ul></li><li><span class='tree-node'>GROUP BY</span><ul><li><span class='tree-node'>genre</span></li></ul></li></ul></li></ul></div>
+      <div class="block-label">Validation</div>
+      <div class='validation ok'><span class='check'>&#10003;</span> Valid</div>
+    </div>
+    </div>
+      
+        <div class="final-sql-box">
+          <div class="block-label">Final validated SQL</div>
+          <div class="sql-box final">SELECT genre, COUNT(*) FROM Books GROUP BY genre</div>
+        </div>
+        <div class="block-label">Query results</div>
+        <table class='results'><thead><tr><th>genre</th><th>COUNT(*)</th></tr></thead><tbody><tr><td>Dystopian</td><td>2</td></tr><tr><td>Fantasy</td><td>2</td></tr><tr><td>Romance</td><td>1</td></tr><tr><td>Satire</td><td>1</td></tr><tr><td>Science Fiction</td><td>2</td></tr></tbody></table>
+        
+    </section>
+    
+    <section class="example" id="example-3">
+      <h2>Example 3 <span class='badge ok'>SUCCESS</span></h2>
+      <div class="question">&ldquo;For each genre, show the author and how many books there are.&rdquo;</div>
+      <div class="attempts-row multi">
+    <div class="attempt-card">
+      <div class="attempt-header">Attempt 1 <span class="source">(seed (simulated bad first attempt))</span></div>
+      <div class="sql-box">SELECT genre, author, COUNT(*) FROM Books GROUP BY genre</div>
+      <div class="block-label">Tokens</div>
+      <div class='token-row'><div class='token-box'><div class='token-type'>SELECT</div><div class='token-value'>SELECT</div></div><div class='token-box'><div class='token-type'>IDENT</div><div class='token-value'>genre</div></div><div class='token-box'><div class='token-type'>COMMA</div><div class='token-value'>,</div></div><div class='token-box'><div class='token-type'>IDENT</div><div class='token-value'>author</div></div><div class='token-box'><div class='token-type'>COMMA</div><div class='token-value'>,</div></div><div class='token-box'><div class='token-type'>IDENT</div><div class='token-value'>COUNT</div></div><div class='token-box'><div class='token-type'>LPAREN</div><div class='token-value'>(</div></div><div class='token-box'><div class='token-type'>STAR</div><div class='token-value'>*</div></div><div class='token-box'><div class='token-type'>RPAREN</div><div class='token-value'>)</div></div><div class='token-box'><div class='token-type'>FROM</div><div class='token-value'>FROM</div></div><div class='token-box'><div class='token-type'>IDENT</div><div class='token-value'>Books</div></div><div class='token-box'><div class='token-type'>GROUP</div><div class='token-value'>GROUP</div></div><div class='token-box'><div class='token-type'>BY</div><div class='token-value'>BY</div></div><div class='token-box'><div class='token-type'>IDENT</div><div class='token-value'>genre</div></div></div>
+      <div class="block-label">AST</div>
+      <div class="tree-wrap"><ul class='tree'><li><span class='tree-node'>SelectStatement</span><ul><li><span class='tree-node'>SELECT</span><ul><li><span class='tree-node'>genre</span></li><li><span class='tree-node'>author</span></li><li><span class='tree-node'>COUNT(...)</span><ul><li><span class='tree-node'>*</span></li></ul></li></ul></li><li><span class='tree-node'>FROM</span><ul><li><span class='tree-node'>Books</span></li></ul></li><li><span class='tree-node'>GROUP BY</span><ul><li><span class='tree-node'>genre</span></li></ul></li></ul></li></ul></div>
+      <div class="block-label">Validation</div>
+      <div class='validation fail'><span class='cross'>&#10007;</span> Invalid<ul class='error-list'><li>Column &#x27;author&#x27; is selected alongside an aggregate function but does not appear in the GROUP BY clause</li></ul></div>
+    </div>
+    
+    <div class="attempt-card">
+      <div class="attempt-header">Attempt 2 <span class="source">(llm (repair))</span></div>
+      <div class="sql-box">SELECT genre, COUNT(*) FROM Books GROUP BY genre</div>
+      <div class="block-label">Tokens</div>
+      <div class='token-row'><div class='token-box'><div class='token-type'>SELECT</div><div class='token-value'>SELECT</div></div><div class='token-box'><div class='token-type'>IDENT</div><div class='token-value'>genre</div></div><div class='token-box'><div class='token-type'>COMMA</div><div class='token-value'>,</div></div><div class='token-box'><div class='token-type'>IDENT</div><div class='token-value'>COUNT</div></div><div class='token-box'><div class='token-type'>LPAREN</div><div class='token-value'>(</div></div><div class='token-box'><div class='token-type'>STAR</div><div class='token-value'>*</div></div><div class='token-box'><div class='token-type'>RPAREN</div><div class='token-value'>)</div></div><div class='token-box'><div class='token-type'>FROM</div><div class='token-value'>FROM</div></div><div class='token-box'><div class='token-type'>IDENT</div><div class='token-value'>Books</div></div><div class='token-box'><div class='token-type'>GROUP</div><div class='token-value'>GROUP</div></div><div class='token-box'><div class='token-type'>BY</div><div class='token-value'>BY</div></div><div class='token-box'><div class='token-type'>IDENT</div><div class='token-value'>genre</div></div></div>
+      <div class="block-label">AST</div>
+      <div class="tree-wrap"><ul class='tree'><li><span class='tree-node'>SelectStatement</span><ul><li><span class='tree-node'>SELECT</span><ul><li><span class='tree-node'>genre</span></li><li><span class='tree-node'>COUNT(...)</span><ul><li><span class='tree-node'>*</span></li></ul></li></ul></li><li><span class='tree-node'>FROM</span><ul><li><span class='tree-node'>Books</span></li></ul></li><li><span class='tree-node'>GROUP BY</span><ul><li><span class='tree-node'>genre</span></li></ul></li></ul></li></ul></div>
+      <div class="block-label">Validation</div>
+      <div class='validation ok'><span class='check'>&#10003;</span> Valid</div>
+    </div>
+    </div>
+      
+        <div class="final-sql-box">
+          <div class="block-label">Final validated SQL</div>
+          <div class="sql-box final">SELECT genre, COUNT(*) FROM Books GROUP BY genre</div>
+        </div>
+        <div class="block-label">Query results</div>
+        <table class='results'><thead><tr><th>genre</th><th>COUNT(*)</th></tr></thead><tbody><tr><td>Dystopian</td><td>2</td></tr><tr><td>Fantasy</td><td>2</td></tr><tr><td>Romance</td><td>1</td></tr><tr><td>Satire</td><td>1</td></tr><tr><td>Science Fiction</td><td>2</td></tr></tbody></table>
+        
+    </section>
+    
+</body>
+</html>
